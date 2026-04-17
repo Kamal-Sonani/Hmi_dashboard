@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Machine HMI Dashboard — Live Production Monitor</title>
+<meta name="description" content="Industrial HMI dashboard for real-time machine monitoring and parallel multi-machine comparison." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@500;700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --radius: 0.625rem;
+    --background: oklch(0.18 0.015 250);
+    --foreground: oklch(0.97 0.005 250);
+    --muted-fg: oklch(0.72 0.02 250);
+    --panel: oklch(0.24 0.02 250);
+    --panel-raised: oklch(0.28 0.022 250);
+    --panel-border: oklch(0.36 0.025 250);
+    --bezel: oklch(0.14 0.012 250);
+    --stop: oklch(0.58 0.24 27);
+    --stop-bright: oklch(0.65 0.26 27);
+    --stop-fg: oklch(0.99 0.01 30);
+    --run: oklch(0.72 0.2 145);
+    --run-bright: oklch(0.82 0.22 145);
+    --run-fg: oklch(0.14 0.02 145);
+    --amber: oklch(0.78 0.17 75);
+    --data-bg: oklch(0.96 0.005 250);
+    --data-fg: oklch(0.18 0.02 250);
+    --digit-bg: oklch(0.12 0.012 250);
+    --digit-stop: oklch(0.72 0.25 27);
+    --digit-run: oklch(0.85 0.22 145);
+    --glow-stop: 0 0 24px oklch(0.6 0.25 27 / 0.55);
+    --glow-run: 0 0 24px oklch(0.78 0.22 145 / 0.55);
+    --shadow-panel:
+      0 1px 0 oklch(1 0 0 / 0.04) inset,
+      0 -1px 0 oklch(0 0 0 / 0.4) inset,
+      0 12px 28px -12px oklch(0 0 0 / 0.55);
+    --font-digital: "Share Tech Mono", "Courier New", monospace;
+    --font-display: "Orbitron", "Inter", sans-serif;
+    --font-sans: "Inter", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; border-color: var(--panel-border); }
+  html, body {
+    background: var(--background); color: var(--foreground);
+    font-family: var(--font-sans); min-height: 100vh;
+  }
+  body {
+    background-image:
+      radial-gradient(ellipse at top, oklch(0.26 0.025 250 / 0.6), transparent 60%),
+      linear-gradient(180deg, oklch(0.18 0.015 250), oklch(0.14 0.012 250));
+  }
+  .font-digital { font-family: var(--font-digital); letter-spacing: 0.05em; }
+  .font-display { font-family: var(--font-display); letter-spacing: 0.04em; }
+  .muted { color: var(--muted-fg); }
+
+  .hmi-panel {
+    background: linear-gradient(180deg, var(--panel-raised), var(--panel));
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-panel);
+  }
+  .hmi-bezel {
+    background: var(--bezel);
+    border: 1px solid oklch(0 0 0 / 0.6);
+    border-radius: calc(var(--radius) - 4px);
+    box-shadow: inset 0 2px 6px oklch(0 0 0 / 0.7), inset 0 -1px 0 oklch(1 0 0 / 0.05);
+  }
+  .hmi-digit {
+    font-family: var(--font-digital);
+    background: var(--digit-bg);
+    border: 1px solid oklch(0 0 0 / 0.7);
+    border-radius: 6px;
+    box-shadow: inset 0 2px 6px oklch(0 0 0 / 0.8), inset 0 -1px 0 oklch(1 0 0 / 0.04);
+    text-shadow: 0 0 10px currentColor;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .hmi-data-field {
+    background: linear-gradient(180deg, oklch(0.98 0.003 250), oklch(0.92 0.005 250));
+    color: var(--data-fg);
+    border: 1px solid oklch(0.7 0.01 250);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.7), inset 0 -1px 2px oklch(0 0 0 / 0.15);
+    padding: 8px 12px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  }
+  .glow-run { box-shadow: var(--glow-run); }
+  .glow-stop { box-shadow: var(--glow-stop); }
+  @keyframes hmi-pulse { 0%,100%{opacity:1;filter:brightness(1)} 50%{opacity:.85;filter:brightness(1.25)} }
+  .animate-pulse { animation: hmi-pulse 1.6s ease-in-out infinite; }
+
+  /* Top nav */
+  .topbar {
+    position: sticky; top: 0; z-index: 30;
+    display:flex; align-items:center; gap: 12px;
+    padding: 8px 16px;
+    background: oklch(0.14 0.012 250 / 0.9);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .brand-mini { display:flex; align-items:center; gap: 8px; }
+  .brand-mini .badge { width: 28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius: 6px; }
+  .brand-mini .label { font-family: var(--font-display); font-size: 11px; font-weight:700; text-transform:uppercase; letter-spacing:.25em; color: var(--muted-fg); }
+  .tabs { display:flex; gap: 6px; margin-left: auto; }
+  .tab {
+    font-family: var(--font-display); font-size: 11px; font-weight:700; text-transform:uppercase; letter-spacing:.18em;
+    padding: 8px 14px; border-radius: 6px; cursor: pointer;
+    background: transparent; color: var(--muted-fg);
+    border: 1px solid transparent;
+  }
+  .tab:hover { color: var(--foreground); background: var(--panel-raised); }
+  .tab.active {
+    color: var(--run-bright);
+    background: var(--bezel);
+    border-color: var(--run);
+  }
+
+  /* Layout */
+  .wrap { max-width: 1500px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  @media (min-width: 640px){ .wrap{ padding: 24px; gap: 20px; } }
+
+  header.bar { display:flex; flex-direction:column; gap:12px; align-items:flex-start; justify-content:space-between; padding: 12px 16px; }
+  @media(min-width:640px){ header.bar{ flex-direction:row; align-items:center; padding: 12px 24px; } }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand-logo { width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:6px; }
+  .brand h1 { font-family: var(--font-display); font-size: 18px; font-weight:700; text-transform:uppercase; letter-spacing:.2em; }
+  @media(min-width:640px){ .brand h1{ font-size: 20px; } }
+  .brand p { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted-fg); margin-top: 2px; }
+  .clock { display:flex; gap:12px; align-items:center; }
+  .clock .hmi-bezel { padding: 6px 12px; font-family: var(--font-digital); color: var(--digit-run); font-size: 14px; }
+
+  /* Stop metric grid */
+  .grid-4 { display:grid; grid-template-columns: repeat(2,1fr); gap: 12px; }
+  @media(min-width:1024px){ .grid-4{ grid-template-columns: repeat(4,1fr); gap:16px; } }
+
+  .stop-card {
+    position:relative; overflow:hidden; padding: 14px;
+    background: linear-gradient(180deg, oklch(0.42 0.18 27 / 0.55), oklch(0.28 0.12 27 / 0.45));
+    border: 1px solid var(--stop);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-panel);
+  }
+  .stop-card::before { content:""; position:absolute; left:0; right:0; top:0; height:4px; background: var(--stop-bright); }
+  .stop-card .head { display:flex; align-items:center; gap:8px; margin-bottom: 10px; }
+  .dot { width:8px; height:8px; border-radius:999px; background: var(--stop-bright); box-shadow: 0 0 8px var(--stop-bright); display:inline-block; }
+  .dot.run { background: var(--run-bright); box-shadow: 0 0 8px var(--run-bright); }
+  .stop-card h3 { font-family: var(--font-display); font-size: 12px; font-weight:700; text-transform:uppercase; letter-spacing:.18em; color: var(--stop-fg); }
+
+  /* Digit blocks */
+  .digits { display:flex; align-items:center; gap:6px; flex-wrap: wrap; }
+  .digit-box { height: 48px; min-width: 56px; padding: 0 10px; font-size: 28px; }
+  .digit-box.sm { height: 36px; min-width: 40px; padding: 0 6px; font-size: 20px; }
+  .digit-stop { color: var(--digit-stop); }
+  .digit-run { color: var(--digit-run); }
+  .colon { font-family: var(--font-digital); font-weight:700; font-size: 24px; }
+  .colon.sm { font-size: 18px; }
+
+  .count-box { display:flex; align-items:center; justify-content:center; height: 56px; padding: 0 16px; font-size: 36px; color: var(--digit-stop); }
+
+  /* Middle grid */
+  .grid-12 { display:grid; grid-template-columns: 1fr; gap: 16px; }
+  @media(min-width:1024px){ .grid-12{ grid-template-columns: repeat(12, 1fr); } }
+  .col-3 { grid-column: span 12; }
+  @media(min-width:1024px){ .col-3{ grid-column: span 3; } }
+
+  .grid-3 { display:grid; grid-template-columns: 1fr; gap:16px; }
+  @media(min-width:1024px){ .grid-3{ grid-template-columns: repeat(3,1fr); } }
+
+  /* Section panel */
+  .panel { display:flex; flex-direction: column; height: 100%; overflow:hidden; }
+  .panel .head {
+    display:flex; align-items:center; gap:8px;
+    border-bottom: 1px solid var(--panel-border);
+    background: oklch(0.2 0.018 250);
+    padding: 10px 16px;
+  }
+  .panel .head .stripe { width:10px; height:10px; border-radius: 2px; background: var(--panel-border); display:inline-block; }
+  .panel .head .stripe.run { background: var(--run-bright); }
+  .panel .head h2 { font-family: var(--font-display); font-size: 13px; font-weight:700; text-transform:uppercase; letter-spacing:.2em; color: var(--foreground); }
+  .panel .body { flex: 1; padding: 18px; display:flex; flex-direction:column; gap: 16px; }
+
+  .row-label { font-family: var(--font-display); font-size: 11px; font-weight:600; text-transform:uppercase; letter-spacing:.18em; color: var(--muted-fg); }
+  .row-value { font-family: var(--font-digital); font-size: 28px; font-weight:700; font-variant-numeric: tabular-nums; color: var(--data-fg); }
+  .row-value.green { color: oklch(0.45 0.18 145); }
+  .row-unit { font-family: var(--font-display); font-size: 10px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color: oklch(0.4 0.02 250); }
+
+  .eff-bar-wrap { display:flex; flex-direction:column; gap: 6px; }
+  .eff-bar-head { display:flex; justify-content:space-between; font-family: var(--font-display); font-size: 10px; text-transform:uppercase; letter-spacing:.18em; color: var(--muted-fg); }
+  .eff-bar { height: 14px; border-radius: 999px; padding: 2px; }
+  .eff-bar > div { height:100%; border-radius: 999px; background: linear-gradient(90deg, oklch(0.72 0.2 145), oklch(0.85 0.22 145)); box-shadow: var(--glow-run); }
+  .eff-bar > div.stop { background: linear-gradient(90deg, oklch(0.62 0.24 27), oklch(0.78 0.22 27)); box-shadow: 0 0 12px oklch(0.7 0.24 27 / 0.6); }
+
+  /* Machine status */
+  .status-panel { display:flex; flex-direction:column; align-items:center; justify-content:center; gap: 18px; padding: 22px; height: 100%; }
+  .status-ring { width: 200px; height: 200px; border-radius: 999px; display:flex; align-items:center; justify-content:center; }
+  .status-disc {
+    width: 168px; height: 168px; border-radius: 999px;
+    display:flex; align-items:center; justify-content:center;
+    border: 2px solid oklch(0 0 0 / 0.5);
+    background: radial-gradient(circle at 30% 30%, oklch(0.92 0.22 145), oklch(0.55 0.22 145) 70%, oklch(0.32 0.15 145));
+  }
+  .status-disc span {
+    font-family: var(--font-display); font-weight:900; font-size: 28px; letter-spacing: .15em;
+    color: var(--run-fg); text-shadow: 0 1px 2px oklch(0 0 0 / 0.4);
+  }
+  .pill { display:inline-flex; align-items:center; gap:8px; padding: 6px 14px; border-radius:999px; border:1px solid var(--panel-border); background: var(--bezel); font-family: var(--font-display); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.18em; }
+  .pill.run-pill { border-color: var(--run); background: oklch(0.32 0.15 145 / 0.4); }
+  .pill.stop-pill { border-color: var(--stop); background: oklch(0.32 0.15 27 / 0.4); }
+
+  /* Sparklines */
+  .grid-sparks { display:grid; grid-template-columns: 1fr; gap:12px; }
+  @media(min-width:640px){ .grid-sparks{ grid-template-columns: repeat(2,1fr); } }
+  @media(min-width:1024px){ .grid-sparks{ grid-template-columns: repeat(4,1fr); } }
+  .spark { padding: 12px; }
+  .spark .head { display:flex; align-items:center; justify-content:space-between; gap: 8px; margin-bottom: 8px; }
+  .spark .head .lbl { font-family: var(--font-display); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.18em; color: var(--muted-fg); }
+  .spark .head .val { font-family: var(--font-digital); font-size: 16px; font-weight:700; font-variant-numeric: tabular-nums; }
+  .spark .head .unit { font-family: var(--font-display); font-size: 9px; text-transform:uppercase; letter-spacing:.1em; color: var(--muted-fg); margin-left: 4px; }
+  .spark svg { display:block; width:100%; height: 70px; overflow: visible; }
+  .spark .meta { display:flex; justify-content:space-between; font-family: ui-monospace, monospace; font-size: 9px; color: var(--muted-fg); margin-top: 6px; }
+
+  /* Buttons */
+  .grid-btns { display:grid; grid-template-columns: repeat(2,1fr); gap:12px; padding: 14px; }
+  @media(min-width:1024px){ .grid-btns{ grid-template-columns: repeat(4,1fr); } }
+  .btn {
+    font-family: var(--font-display); font-size: 14px; font-weight:700; text-transform:uppercase; letter-spacing:.18em;
+    padding: 18px 20px; border-radius: 6px; border:1px solid var(--panel-border);
+    background: linear-gradient(180deg, oklch(0.32 0.025 250), oklch(0.22 0.02 250));
+    color: var(--foreground);
+    box-shadow: 0 4px 0 oklch(0.12 0.012 250), 0 6px 12px oklch(0 0 0 / 0.4);
+    cursor: pointer;
+  }
+  .btn:hover { filter: brightness(1.25); border-color: var(--run-bright); }
+  .btn.alert {
+    color: var(--stop-fg); border-color: var(--stop-bright);
+    background: linear-gradient(180deg, oklch(0.6 0.24 27), oklch(0.42 0.2 27));
+    box-shadow: 0 4px 0 oklch(0.25 0.15 27), 0 0 18px oklch(0.6 0.25 27 / 0.55);
+  }
+
+  footer { display:flex; justify-content:space-between; align-items:center; padding: 0 4px 8px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted-fg); }
+
+  /* Compare view */
+  .machine-col { display:flex; flex-direction:column; overflow:hidden; }
+  .machine-col .head {
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    border-bottom: 1px solid var(--panel-border);
+    padding: 12px 16px;
+  }
+  .machine-col .head.run { background: linear-gradient(180deg, oklch(0.32 0.12 145 / 0.5), oklch(0.22 0.06 145 / 0.3)); }
+  .machine-col .head.stop { background: linear-gradient(180deg, oklch(0.32 0.14 27 / 0.5), oklch(0.22 0.08 27 / 0.3)); }
+  .machine-col .head .name { font-family: var(--font-display); font-size: 14px; font-weight:700; text-transform:uppercase; letter-spacing:.2em; }
+  .machine-col .head .sub { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted-fg); }
+  .machine-col .body { padding: 16px; display:flex; flex-direction:column; gap: 14px; }
+
+  .tile-grid { display:grid; grid-template-columns: repeat(2,1fr); gap: 8px; }
+  .tile { padding: 8px 10px; }
+  .tile .lbl { font-family: var(--font-display); font-size: 9px; font-weight:600; text-transform:uppercase; letter-spacing:.15em; color: oklch(0.4 0.02 250); margin-bottom: 2px; }
+  .tile .row { display:flex; justify-content:space-between; align-items:baseline; gap:4px; }
+  .tile .v { font-family: var(--font-digital); font-size: 18px; font-weight:700; font-variant-numeric: tabular-nums; color: var(--data-fg); }
+  .tile .v.good { color: oklch(0.45 0.18 145); }
+  .tile .v.warn { color: oklch(0.5 0.22 27); }
+  .tile .u { font-family: ui-monospace, monospace; font-size: 9px; color: oklch(0.4 0.02 250); }
+
+  /* Comparison chart */
+  .cmp-chart { padding: 14px; }
+  .cmp-chart .top { display:flex; justify-content:space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .cmp-chart .title { font-family: var(--font-display); font-size: 12px; font-weight:700; text-transform:uppercase; letter-spacing:.2em; }
+  .cmp-chart .legend { display:flex; flex-wrap:wrap; gap: 10px; }
+  .cmp-chart .legend .item { display:flex; align-items:center; gap: 6px; }
+  .cmp-chart .legend .sw { width: 10px; height: 10px; border-radius: 2px; }
+  .cmp-chart .legend .lbl { font-family: var(--font-display); font-size:10px; text-transform:uppercase; letter-spacing:.15em; color: var(--muted-fg); }
+  .cmp-chart .legend .val { font-family: var(--font-digital); font-size: 14px; font-weight:700; font-variant-numeric: tabular-nums; }
+  .cmp-chart .canvas { padding: 8px; }
+  .cmp-chart .canvas svg { display:block; width:100%; height: 160px; overflow:visible; }
+  .cmp-chart .meta { display:flex; justify-content:space-between; font-family: ui-monospace, monospace; font-size: 9px; color: var(--muted-fg); margin-top: 6px; }
+
+  /* Summary table */
+  .summary { overflow:hidden; }
+  .summary > .head { padding: 10px 16px; background: oklch(0.2 0.018 250); border-bottom: 1px solid var(--panel-border); }
+  .summary > .head h2 { font-family: var(--font-display); font-size: 13px; font-weight:700; text-transform:uppercase; letter-spacing:.2em; }
+  .summary .scroll { overflow-x: auto; }
+  table.sum { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.sum thead th {
+    font-family: var(--font-display); font-size: 10px; text-transform:uppercase; letter-spacing:.15em; color: var(--muted-fg);
+    text-align: left; padding: 10px 16px; background: var(--bezel); border-bottom: 1px solid var(--panel-border);
+  }
+  table.sum thead th.r { text-align: right; }
+  table.sum tbody td { padding: 12px 16px; border-bottom: 1px solid color-mix(in oklch, var(--panel-border) 50%, transparent); }
+  table.sum tbody tr:last-child td { border-bottom: 0; }
+  table.sum tbody tr:hover { background: var(--panel-raised); }
+  table.sum td.r { text-align: right; font-family: var(--font-digital); font-variant-numeric: tabular-nums; }
+  table.sum td .nm { font-family: var(--font-display); font-size: 12px; font-weight:700; text-transform:uppercase; letter-spacing:.15em; }
+  table.sum td .ln { font-family: ui-monospace, monospace; font-size: 10px; color: var(--muted-fg); margin-top: 2px; }
+  td.r.good { color: var(--digit-run); }
+  td.r.warn { color: var(--amber); }
+  td.r.stop { color: var(--digit-stop); }
+  td.r.dim { color: var(--muted-fg); }
+
+  .header-pills { display:flex; flex-wrap:wrap; gap:8px; }
+
+  .view { display: none; }
+  .view.active { display: flex; flex-direction: column; gap: 16px; }
+</style>
+</head>
+<body>
+
+<!-- Top tab bar -->
+<div class="topbar">
+  <div class="brand-mini">
+    <div class="hmi-bezel badge"><span class="font-display" style="font-size:13px;font-weight:900;color:var(--run-bright)">M</span></div>
+    <span class="label">Plant · Operator Console</span>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="dashboard" role="tab">Dashboard</button>
+    <button class="tab" data-view="compare" role="tab">Compare</button>
+  </nav>
+</div>
+
+<main class="wrap">
+
+  <!-- ============== DASHBOARD VIEW ============== -->
+  <div class="view active" id="view-dashboard">
+    <header class="hmi-panel bar">
+      <div class="brand">
+        <div class="hmi-bezel brand-logo">
+          <span class="font-display" style="font-size:18px;font-weight:900;color:var(--run-bright)">M</span>
+        </div>
+        <div>
+          <h1>Machine Control · HMI</h1>
+          <p>Line 04 · Operator Panel · Shift A</p>
+        </div>
+      </div>
+      <div class="clock">
+        <div class="hmi-bezel" id="clock-date">--/--/----</div>
+        <div class="hmi-bezel" id="clock-time">--:--:--</div>
+      </div>
+    </header>
+
+    <section class="grid-4" aria-label="Stop metrics">
+      <div class="stop-card">
+        <div class="head"><span class="dot"></span><h3>Stop Count</h3></div>
+        <div class="hmi-digit count-box">88</div>
+      </div>
+      <div class="stop-card">
+        <div class="head"><span class="dot"></span><h3>Current Stop Time</h3></div>
+        <div class="digits" data-time="00:00:00" data-variant="stop"></div>
+      </div>
+      <div class="stop-card">
+        <div class="head"><span class="dot"></span><h3>Last Stop Duration</h3></div>
+        <div class="digits" data-time="00:00:05" data-variant="stop"></div>
+      </div>
+      <div class="stop-card">
+        <div class="head"><span class="dot"></span><h3>Total Stop Time</h3></div>
+        <div class="digits" data-time="02:07:14" data-variant="stop"></div>
+      </div>
+    </section>
+
+    <section class="grid-12">
+      <div class="col-3">
+        <div class="hmi-panel panel">
+          <div class="head"><span class="stripe"></span><h2>Production</h2></div>
+          <div class="body">
+            <div>
+              <div class="row-label">Production</div>
+              <div class="hmi-data-field"><span class="row-value">6419.5</span><span class="row-unit">units</span></div>
+            </div>
+            <div>
+              <div class="row-label">Efficiency</div>
+              <div class="hmi-data-field"><span class="row-value green">76.75</span><span class="row-unit">%</span></div>
+            </div>
+            <div>
+              <div class="row-label">Expected Production</div>
+              <div class="hmi-data-field"><span class="row-value">8411.9</span><span class="row-unit">units</span></div>
+            </div>
+            <div class="eff-bar-wrap">
+              <div class="eff-bar-head"><span>Efficiency</span><span>76.75%</span></div>
+              <div class="hmi-bezel eff-bar"><div style="width:76.75%"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-3">
+        <div class="hmi-panel panel">
+          <div class="head"><span class="stripe run"></span><h2>Current Cycle</h2></div>
+          <div class="body">
+            <div>
+              <div class="row-label" style="margin-bottom:6px">Current Run Time</div>
+              <div class="digits" data-time="00:27:53" data-variant="run"></div>
+            </div>
+            <div><div class="row-label">Current Repeat</div>
+              <div class="hmi-data-field"><span class="row-value">0.76</span><span class="row-unit">meter</span></div></div>
+            <div><div class="row-label">Current Stroke</div>
+              <div class="hmi-data-field"><span class="row-value">21.00</span><span class="row-unit">spm</span></div></div>
+            <div><div class="row-label">Current Speed</div>
+              <div class="hmi-data-field"><span class="row-value green">15.97</span><span class="row-unit">m/min</span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-3">
+        <div class="hmi-panel panel">
+          <div class="head"><span class="stripe"></span><h2>Shift Averages</h2></div>
+          <div class="body">
+            <div>
+              <div class="row-label" style="margin-bottom:6px">Total Run Time</div>
+              <div class="digits" data-time="07:03:54" data-variant="run"></div>
+            </div>
+            <div><div class="row-label">Average Repeat</div>
+              <div class="hmi-data-field"><span class="row-value">0.76</span><span class="row-unit">meter</span></div></div>
+            <div><div class="row-label">Average Stroke</div>
+              <div class="hmi-data-field"><span class="row-value">20.87</span><span class="row-unit">spm</span></div></div>
+            <div><div class="row-label">Average Speed</div>
+              <div class="hmi-data-field"><span class="row-value green">15.75</span><span class="row-unit">m/min</span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-3">
+        <div class="hmi-panel status-panel">
+          <div class="font-display" style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.25em;color:var(--muted-fg)">Machine Status</div>
+          <div class="hmi-bezel status-ring">
+            <div class="status-disc glow-run animate-pulse"><span>RUNNING</span></div>
+          </div>
+          <div class="pill"><span class="dot run"></span><span>Online · Production</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-label="Live trends">
+      <div class="hmi-panel panel">
+        <div class="head"><span class="stripe run"></span><h2>Live Trends · Last 40s</h2></div>
+        <div class="body">
+          <div class="grid-sparks">
+            <div class="hmi-bezel spark" data-baseline="15.97" data-variance="0.05" data-color="run" data-decimals="2" data-label="Speed" data-unit="m/min"></div>
+            <div class="hmi-bezel spark" data-baseline="21" data-variance="0.04" data-color="run" data-decimals="2" data-label="Stroke" data-unit="spm"></div>
+            <div class="hmi-bezel spark" data-baseline="0.76" data-variance="0.03" data-color="amber" data-decimals="3" data-label="Repeat" data-unit="m"></div>
+            <div class="hmi-bezel spark" data-baseline="76.75" data-variance="0.03" data-color="run" data-decimals="1" data-label="Efficiency" data-unit="%"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="hmi-panel grid-btns" aria-label="Controls">
+      <button class="btn">Diag</button>
+      <button class="btn">Main</button>
+      <button class="btn">Last Shift Summary</button>
+      <button class="btn alert animate-pulse">Hooter Reset</button>
+    </section>
+
+    <footer>
+      <span>HMI v2.4 · Touch Optimized</span>
+      <span>© Plant Operations</span>
+    </footer>
+  </div>
+
+  <!-- ============== COMPARE VIEW ============== -->
+  <div class="view" id="view-compare">
+    <header class="hmi-panel bar">
+      <div>
+        <h1 class="font-display" style="font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.2em">Machine Comparison</h1>
+        <p style="font-family:ui-monospace,monospace;font-size:11px;color:var(--muted-fg);margin-top:2px">Live parallel monitoring · 3 machines</p>
+      </div>
+      <div class="header-pills" id="header-pills"></div>
+    </header>
+
+    <section class="grid-3" id="machine-cols"></section>
+
+    <section class="grid-3" id="cmp-charts"></section>
+
+    <section class="hmi-panel summary">
+      <div class="head"><h2>Summary</h2></div>
+      <div class="scroll">
+        <table class="sum">
+          <thead>
+            <tr>
+              <th>Machine</th>
+              <th>Status</th>
+              <th class="r">Production</th>
+              <th class="r">Efficiency</th>
+              <th class="r">Speed</th>
+              <th class="r">Stops</th>
+              <th class="r">Total Stop</th>
+            </tr>
+          </thead>
+          <tbody id="summary-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <span>HMI v2.4 · Comparison Mode</span>
+      <span>© Plant Operations</span>
+    </footer>
+  </div>
+
+</main>
+
+<script>
+/* ============= Tab switching ============= */
+(function(){
+  const tabs = document.querySelectorAll('.tab');
+  const views = document.querySelectorAll('.view');
+  function show(name){
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.view === name));
+    views.forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+    if (location.hash.replace('#','') !== name) history.replaceState(null, '', '#' + name);
+  }
+  tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.view)));
+  const initial = (location.hash.replace('#','') === 'compare') ? 'compare' : 'dashboard';
+  show(initial);
+})();
+
+/* ============= Live clock ============= */
+(function(){
+  const d = document.getElementById('clock-date');
+  const t = document.getElementById('clock-time');
+  function tick(){
+    const now = new Date();
+    d.textContent = now.toLocaleDateString();
+    t.textContent = now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  }
+  tick(); setInterval(tick, 1000);
+})();
+
+/* ============= Digit blocks ============= */
+function renderDigits(el, time, variant, sizeMod){
+  const colorClass = variant === 'stop' ? 'digit-stop' : 'digit-run';
+  const sizeClass = sizeMod === 'sm' ? ' sm' : '';
+  const colonSize = sizeMod === 'sm' ? ' sm' : '';
+  const parts = time.split(':');
+  el.innerHTML = parts.map((p, i) => {
+    const box = `<div class="hmi-digit digit-box${sizeClass} ${colorClass}">${p}</div>`;
+    const colon = i < parts.length - 1 ? `<span class="colon${colonSize} ${colorClass} animate-pulse">:</span>` : '';
+    return box + colon;
+  }).join('');
+}
+document.querySelectorAll('.digits[data-time]').forEach(el => {
+  renderDigits(el, el.dataset.time, el.dataset.variant);
+});
+
+/* ============= Live sparklines (dashboard) ============= */
+(function(){
+  const COLORS = {
+    run:   { stroke: 'oklch(0.82 0.22 145)', fill: 'oklch(0.72 0.2 145 / 0.25)', text: 'var(--digit-run)' },
+    stop:  { stroke: 'oklch(0.72 0.25 27)',  fill: 'oklch(0.62 0.24 27 / 0.25)', text: 'var(--digit-stop)' },
+    amber: { stroke: 'oklch(0.82 0.18 75)',  fill: 'oklch(0.78 0.17 75 / 0.25)', text: 'oklch(0.82 0.18 75)' },
+  };
+  const POINTS = 40;
+  document.querySelectorAll('.spark').forEach(el => {
+    const baseline = parseFloat(el.dataset.baseline);
+    const variance = parseFloat(el.dataset.variance);
+    const decimals = parseInt(el.dataset.decimals, 10);
+    const c = COLORS[el.dataset.color] || COLORS.run;
+    const label = el.dataset.label, unit = el.dataset.unit;
+    el.innerHTML = `
+      <div class="head">
+        <span class="lbl">${label}</span>
+        <div>
+          <span class="val" style="color:${c.text}">${baseline.toFixed(decimals)}</span>
+          <span class="unit">${unit}</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+        <line x1="0" x2="100" y1="25" y2="25" stroke="oklch(1 0 0 / 0.05)" stroke-width="0.3" vector-effect="non-scaling-stroke"/>
+        <line x1="0" x2="100" y1="50" y2="50" stroke="oklch(1 0 0 / 0.05)" stroke-width="0.3" vector-effect="non-scaling-stroke"/>
+        <line x1="0" x2="100" y1="75" y2="75" stroke="oklch(1 0 0 / 0.05)" stroke-width="0.3" vector-effect="non-scaling-stroke"/>
+        <path class="area" fill="${c.fill}" d=""></path>
+        <path class="line" fill="none" stroke="${c.stroke}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+              vector-effect="non-scaling-stroke" style="filter: drop-shadow(0 0 4px ${c.stroke})" d=""></path>
+      </svg>
+      <div class="meta"><span class="min">min ${baseline.toFixed(decimals)}</span><span class="max">max ${baseline.toFixed(decimals)}</span></div>
+    `;
+    const valEl = el.querySelector('.val');
+    const minEl = el.querySelector('.min');
+    const maxEl = el.querySelector('.max');
+    const lineEl = el.querySelector('path.line');
+    const areaEl = el.querySelector('path.area');
+    const series = new Array(POINTS).fill(baseline);
+    let last = baseline;
+    function step(){
+      const drift = (Math.random() - 0.5) * 2 * variance * baseline;
+      const pull = (baseline - last) * 0.25;
+      last = Math.max(0, last + drift + pull);
+      series.shift(); series.push(last);
+      render();
+    }
+    function render(){
+      const w=100,h=100,padY=8;
+      let lo=Infinity,hi=-Infinity;
+      for(const v of series){ if(v<lo)lo=v; if(v>hi)hi=v; }
+      const range = Math.max(hi-lo, baseline*0.02, 0.0001);
+      let dPath='';
+      for(let i=0;i<series.length;i++){
+        const x=(i/(series.length-1))*w;
+        const y=h-padY-((series[i]-lo)/range)*(h-padY*2);
+        dPath += (i===0?'M':'L')+x.toFixed(2)+','+y.toFixed(2)+' ';
+      }
+      lineEl.setAttribute('d', dPath.trim());
+      areaEl.setAttribute('d', dPath.trim()+` L${w},${h} L0,${h} Z`);
+      valEl.textContent = series[series.length-1].toFixed(decimals);
+      minEl.textContent = 'min ' + lo.toFixed(decimals);
+      maxEl.textContent = 'max ' + hi.toFixed(decimals);
+    }
+    render();
+    setInterval(step, 1000);
+  });
+})();
+
+/* ============= COMPARE VIEW ============= */
+const MACHINES = [
+  { id:'M-01', name:'Machine 01', line:'Line A · Bay 1', status:'RUNNING',
+    production:6419.5, expected:8411.9, efficiency:76.75, speed:15.97, stroke:21.00, repeat:0.76,
+    runTime:'07:03:54', stopCount:88,  totalStop:'02:07:14' },
+  { id:'M-02', name:'Machine 02', line:'Line A · Bay 2', status:'RUNNING',
+    production:7102.3, expected:8411.9, efficiency:84.43, speed:17.42, stroke:22.40, repeat:0.78,
+    runTime:'07:42:11', stopCount:54,  totalStop:'01:18:02' },
+  { id:'M-03', name:'Machine 03', line:'Line B · Bay 1', status:'STOPPED',
+    production:4895.1, expected:8411.9, efficiency:58.20, speed:0,     stroke:0,     repeat:0.74,
+    runTime:'05:21:47', stopCount:142, totalStop:'03:48:55' },
+];
+const SERIES_COLORS = ['oklch(0.82 0.22 145)', 'oklch(0.78 0.17 75)', 'oklch(0.72 0.25 27)'];
+
+/* Header pills */
+(function(){
+  const wrap = document.getElementById('header-pills');
+  wrap.innerHTML = MACHINES.map(m => `
+    <div class="hmi-bezel" style="display:flex;align-items:center;gap:8px;padding:6px 12px">
+      <span class="dot ${m.status==='RUNNING'?'run':''}"></span>
+      <span class="font-display" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.18em">${m.id}</span>
+    </div>
+  `).join('');
+})();
+
+/* Machine columns */
+(function(){
+  const wrap = document.getElementById('machine-cols');
+  wrap.innerHTML = MACHINES.map((m, idx) => {
+    const isRun = m.status === 'RUNNING';
+    const pct = Math.min(100, (m.production / m.expected) * 100);
+    const effHigh = m.efficiency >= 75 ? 'good' : 'warn';
+    const stopHigh = m.stopCount >= 100 ? 'warn' : '';
+    return `
+      <div class="hmi-panel machine-col">
+        <div class="head ${isRun?'run':'stop'}">
+          <div style="min-width:0">
+            <div class="name">${m.name}</div>
+            <div class="sub">${m.id} · ${m.line}</div>
+          </div>
+          <div class="pill ${isRun?'run-pill':'stop-pill'}">
+            <span class="dot ${isRun?'run':''} ${isRun?'animate-pulse':''}"></span>
+            <span>${m.status}</span>
+          </div>
+        </div>
+        <div class="body">
+          <div>
+            <div class="row-label" style="margin-bottom:6px">Total Run Time</div>
+            <div class="digits" id="rt-${idx}"></div>
+          </div>
+          <div class="tile-grid">
+            <div class="hmi-data-field tile"><div style="display:flex;flex-direction:column;width:100%">
+              <span class="lbl">Production</span>
+              <div class="row"><span class="v">${m.production.toFixed(1)}</span><span class="u">u</span></div>
+            </div></div>
+            <div class="hmi-data-field tile"><div style="display:flex;flex-direction:column;width:100%">
+              <span class="lbl">Efficiency</span>
+              <div class="row"><span class="v ${effHigh}">${m.efficiency.toFixed(1)}</span><span class="u">%</span></div>
+            </div></div>
+            <div class="hmi-data-field tile"><div style="display:flex;flex-direction:column;width:100%">
+              <span class="lbl">Speed</span>
+              <div class="row"><span class="v">${m.speed.toFixed(2)}</span><span class="u">m/min</span></div>
+            </div></div>
+            <div class="hmi-data-field tile"><div style="display:flex;flex-direction:column;width:100%">
+              <span class="lbl">Stroke</span>
+              <div class="row"><span class="v">${m.stroke.toFixed(2)}</span><span class="u">spm</span></div>
+            </div></div>
+            <div class="hmi-data-field tile"><div style="display:flex;flex-direction:column;width:100%">
+              <span class="lbl">Repeat</span>
+              <div class="row"><span class="v">${m.repeat.toFixed(2)}</span><span class="u">m</span></div>
+            </div></div>
+            <div class="hmi-data-field tile"><div style="display:flex;flex-direction:column;width:100%">
+              <span class="lbl">Stops</span>
+              <div class="row"><span class="v ${stopHigh}">${m.stopCount}</span><span class="u">${m.totalStop}</span></div>
+            </div></div>
+          </div>
+          <div class="eff-bar-wrap">
+            <div class="eff-bar-head"><span>vs Expected</span><span>${Math.round(pct)}%</span></div>
+            <div class="hmi-bezel eff-bar"><div class="${isRun?'':'stop'}" style="width:${pct}%"></div></div>
+          </div>
+          <div class="hmi-bezel spark mini-spark" data-baseline="${m.speed || 0.1}" data-variance="${isRun?0.06:0.4}"
+               data-color="${isRun?'run':'stop'}" data-decimals="2" data-label="Speed Trend" data-unit="m/min"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  /* render run-time digits + mini sparklines */
+  MACHINES.forEach((m, idx) => {
+    const el = document.getElementById('rt-' + idx);
+    renderDigits(el, m.runTime, m.status === 'RUNNING' ? 'run' : 'stop', 'sm');
+  });
+  /* re-init sparklines created above (the dashboard initializer already ran, so init these) */
+  initSparks(document.querySelectorAll('#view-compare .spark'));
+})();
+
+/* Sparkline initializer reusable */
+function initSparks(nodes){
+  const COLORS = {
+    run:   { stroke: 'oklch(0.82 0.22 145)', fill: 'oklch(0.72 0.2 145 / 0.25)', text: 'var(--digit-run)' },
+    stop:  { stroke: 'oklch(0.72 0.25 27)',  fill: 'oklch(0.62 0.24 27 / 0.25)', text: 'var(--digit-stop)' },
+    amber: { stroke: 'oklch(0.82 0.18 75)',  fill: 'oklch(0.78 0.17 75 / 0.25)', text: 'oklch(0.82 0.18 75)' },
+  };
+  const POINTS = 40;
+  nodes.forEach(el => {
+    if (el.dataset.inited) return;
+    el.dataset.inited = '1';
+    const baseline = parseFloat(el.dataset.baseline);
+    const variance = parseFloat(el.dataset.variance);
+    const decimals = parseInt(el.dataset.decimals, 10);
+    const c = COLORS[el.dataset.color] || COLORS.run;
+    el.innerHTML = `
+      <div class="head">
+        <span class="lbl">${el.dataset.label}</span>
+        <div>
+          <span class="val" style="color:${c.text}">${baseline.toFixed(decimals)}</span>
+          <span class="unit">${el.dataset.unit}</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" style="height:60px">
+        <line x1="0" x2="100" y1="50" y2="50" stroke="oklch(1 0 0 / 0.05)" stroke-width="0.3" vector-effect="non-scaling-stroke"/>
+        <path class="area" fill="${c.fill}" d=""></path>
+        <path class="line" fill="none" stroke="${c.stroke}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+              vector-effect="non-scaling-stroke" style="filter: drop-shadow(0 0 4px ${c.stroke})" d=""></path>
+      </svg>
+      <div class="meta"><span class="min">min ${baseline.toFixed(decimals)}</span><span class="max">max ${baseline.toFixed(decimals)}</span></div>
+    `;
+    const valEl = el.querySelector('.val'), minEl = el.querySelector('.min'), maxEl = el.querySelector('.max');
+    const lineEl = el.querySelector('path.line'), areaEl = el.querySelector('path.area');
+    const series = new Array(POINTS).fill(baseline);
+    let last = baseline;
+    setInterval(() => {
+      const drift = (Math.random() - 0.5) * 2 * variance * Math.max(baseline, 0.5);
+      const pull = (baseline - last) * 0.25;
+      last = Math.max(0, last + drift + pull);
+      series.shift(); series.push(last);
+      const w=100,h=100,padY=8;
+      let lo=Infinity,hi=-Infinity;
+      for(const v of series){ if(v<lo)lo=v; if(v>hi)hi=v; }
+      const range = Math.max(hi-lo, Math.max(baseline,0.5)*0.02, 0.0001);
+      let dPath='';
+      for(let i=0;i<series.length;i++){
+        const x=(i/(series.length-1))*w;
+        const y=h-padY-((series[i]-lo)/range)*(h-padY*2);
+        dPath += (i===0?'M':'L')+x.toFixed(2)+','+y.toFixed(2)+' ';
+      }
+      lineEl.setAttribute('d', dPath.trim());
+      areaEl.setAttribute('d', dPath.trim()+` L${w},${h} L0,${h} Z`);
+      valEl.textContent = last.toFixed(decimals);
+      minEl.textContent = 'min ' + lo.toFixed(decimals);
+      maxEl.textContent = 'max ' + hi.toFixed(decimals);
+    }, 1000);
+  });
+}
+
+/* Multi-series comparison charts */
+(function(){
+  const wrap = document.getElementById('cmp-charts');
+  const charts = [
+    { metric:'Speed',      unit:'m/min', baselines: MACHINES.map(m => m.speed || 0.1),  variances:[0.06,0.06,0.4],  decimals:2 },
+    { metric:'Efficiency', unit:'%',     baselines: MACHINES.map(m => m.efficiency),    variances:[0.03,0.03,0.05], decimals:1 },
+    { metric:'Production', unit:'units', baselines: MACHINES.map(m => m.production),    variances:[0.02,0.02,0.02], decimals:0 },
+  ];
+  wrap.innerHTML = charts.map((_, ci) => `
+    <div class="hmi-panel cmp-chart" data-ci="${ci}">
+      <div class="top">
+        <div class="title">${charts[ci].metric} <span class="muted">· ${charts[ci].unit}</span></div>
+        <div class="legend"></div>
+      </div>
+      <div class="hmi-bezel canvas">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <line x1="0" x2="100" y1="20" y2="20" stroke="oklch(1 0 0 / 0.05)" stroke-width="0.3" vector-effect="non-scaling-stroke"/>
+          <line x1="0" x2="100" y1="40" y2="40" stroke="oklch(1 0 0 / 0.05)" stroke-width="0.3" vector-effect="non-scaling-stroke"/>
+          <line x1="0" x2="100" y1="60" y2="60" stroke="oklch(1 0 0 / 0.05)" stroke-width="0.3" vector-effect="non-scaling-stroke"/>
+          <line x1="0" x2="100" y1="80" y2="80" stroke="oklch(1 0 0 / 0.05)" stroke-width="0.3" vector-effect="non-scaling-stroke"/>
+          ${MACHINES.map((_, i) => `
+            <path class="ln-${i}" fill="none" stroke="${SERIES_COLORS[i]}" stroke-width="1.5"
+                  stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"
+                  style="filter: drop-shadow(0 0 3px ${SERIES_COLORS[i]})" d=""></path>
+          `).join('')}
+        </svg>
+        <div class="meta"><span class="lo">min —</span><span class="hi">max —</span></div>
+      </div>
+    </div>
+  `).join('');
+
+  charts.forEach((cfg, ci) => {
+    const root = wrap.querySelector(`[data-ci="${ci}"]`);
+    const legend = root.querySelector('.legend');
+    legend.innerHTML = MACHINES.map((m, i) => `
+      <div class="item">
+        <span class="sw" style="background:${SERIES_COLORS[i]};box-shadow:0 0 6px ${SERIES_COLORS[i]}"></span>
+        <span class="lbl">${m.id}</span>
+        <span class="val val-${i}" style="color:${SERIES_COLORS[i]}">${cfg.baselines[i].toFixed(cfg.decimals)}</span>
+      </div>
+    `).join('');
+
+    const POINTS = 50;
+    const series = cfg.baselines.map(b => new Array(POINTS).fill(b));
+    const lines = MACHINES.map((_, i) => root.querySelector(`.ln-${i}`));
+    const valEls = MACHINES.map((_, i) => root.querySelector(`.val-${i}`));
+    const loEl = root.querySelector('.lo'), hiEl = root.querySelector('.hi');
+
+    function step(){
+      for (let i = 0; i < series.length; i++){
+        const last = series[i][series[i].length - 1];
+        const drift = (Math.random() - 0.5) * 2 * cfg.variances[i] * Math.max(cfg.baselines[i], 0.5);
+        const pull = (cfg.baselines[i] - last) * 0.2;
+        const next = Math.max(0, last + drift + pull);
+        series[i].shift(); series[i].push(next);
+      }
+      render();
+    }
+    function render(){
+      let lo=Infinity, hi=-Infinity;
+      for (const row of series) for (const v of row){ if(v<lo)lo=v; if(v>hi)hi=v; }
+      const range = Math.max(hi-lo, 0.001);
+      const w=100,h=100,padY=6;
+      series.forEach((row, i) => {
+        let d='';
+        for (let k=0;k<row.length;k++){
+          const x=(k/(row.length-1))*w;
+          const y=h-padY-((row[k]-lo)/range)*(h-padY*2);
+          d += (k===0?'M':'L')+x.toFixed(2)+','+y.toFixed(2)+' ';
+        }
+        lines[i].setAttribute('d', d.trim());
+        valEls[i].textContent = row[row.length-1].toFixed(cfg.decimals);
+      });
+      loEl.textContent = 'min ' + lo.toFixed(cfg.decimals);
+      hiEl.textContent = 'max ' + hi.toFixed(cfg.decimals);
+    }
+    render();
+    setInterval(step, 1000);
+  });
+})();
+
+/* Summary table */
+(function(){
+  const tbody = document.getElementById('summary-rows');
+  tbody.innerHTML = MACHINES.map(m => {
+    const isRun = m.status === 'RUNNING';
+    const effClass = m.efficiency >= 75 ? 'good' : 'warn';
+    return `
+      <tr>
+        <td>
+          <div class="nm">${m.name}</div>
+          <div class="ln">${m.line}</div>
+        </td>
+        <td>
+          <span class="pill ${isRun?'run-pill':'stop-pill'}">
+            <span class="dot ${isRun?'run':''}"></span>
+            <span>${m.status}</span>
+          </span>
+        </td>
+        <td class="r">${m.production.toFixed(1)}</td>
+        <td class="r ${effClass}">${m.efficiency.toFixed(2)}%</td>
+        <td class="r ${isRun?'':'dim'}">${m.speed.toFixed(2)}</td>
+        <td class="r">${m.stopCount}</td>
+        <td class="r stop">${m.totalStop}</td>
+      </tr>
+    `;
+  }).join('');
+})();
+</script>
+</body>
+</html>
