@@ -314,6 +314,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab active" data-view="dashboard" role="tab">Dashboard</button>
     <button class="tab" data-view="compare" role="tab">Compare</button>
+    <button class="tab" data-view="matrix" role="tab">LED Matrix</button>
   </nav>
 </div>
 
@@ -495,6 +496,72 @@
     </footer>
   </div>
 
+  <!-- ============== LED MATRIX VIEW ============== -->
+  <div class="view" id="view-matrix">
+    <header class="hmi-panel bar">
+      <div class="brand">
+        <div class="hmi-bezel brand-logo">
+          <span class="font-display" style="font-size:18px;font-weight:900;color:var(--run-bright)">●</span>
+        </div>
+        <div>
+          <h1>Dot Matrix LED · Live Preview</h1>
+          <p>Canvas-rendered LED panel · 7-segment style scrolling data</p>
+        </div>
+      </div>
+      <div class="clock">
+        <div class="hmi-bezel" id="led-fps">-- fps</div>
+      </div>
+    </header>
+
+    <section class="hmi-panel panel">
+      <div class="head"><span class="stripe run"></span><h2>Primary LED Display</h2></div>
+      <div class="body" style="align-items:center">
+        <div class="hmi-bezel" style="padding:14px;border-radius:14px;background:#000">
+          <canvas id="led-main" width="900" height="240" style="display:block;width:100%;height:auto;max-width:900px;image-rendering:pixelated;border-radius:6px"></canvas>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:6px">
+          <button class="btn" data-led-mode="speed">Speed</button>
+          <button class="btn" data-led-mode="stroke">Stroke</button>
+          <button class="btn" data-led-mode="efficiency">Efficiency</button>
+          <button class="btn" data-led-mode="production">Production</button>
+          <button class="btn" data-led-mode="status">Status</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid-3">
+      <div class="hmi-panel panel">
+        <div class="head"><span class="stripe run"></span><h2>Run Time</h2></div>
+        <div class="body" style="align-items:center;padding:10px 14px 16px">
+          <div class="hmi-bezel" style="padding:10px;border-radius:10px;background:#000">
+            <canvas class="led-mini" data-led-kind="time" width="380" height="120" style="display:block;width:100%;height:auto;max-width:380px;image-rendering:pixelated"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="hmi-panel panel">
+        <div class="head"><span class="stripe"></span><h2>Stop Count</h2></div>
+        <div class="body" style="align-items:center;padding:10px 14px 16px">
+          <div class="hmi-bezel" style="padding:10px;border-radius:10px;background:#000">
+            <canvas class="led-mini" data-led-kind="count" width="380" height="120" style="display:block;width:100%;height:auto;max-width:380px;image-rendering:pixelated"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="hmi-panel panel">
+        <div class="head"><span class="stripe"></span><h2>Efficiency %</h2></div>
+        <div class="body" style="align-items:center;padding:10px 14px 16px">
+          <div class="hmi-bezel" style="padding:10px;border-radius:10px;background:#000">
+            <canvas class="led-mini" data-led-kind="eff" width="380" height="120" style="display:block;width:100%;height:auto;max-width:380px;image-rendering:pixelated"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <span>HMI v2.4 · LED Matrix Mode</span>
+      <span>© Plant Operations</span>
+    </footer>
+  </div>
+
 </main>
 
 <script>
@@ -508,7 +575,8 @@
     if (location.hash.replace('#','') !== name) history.replaceState(null, '', '#' + name);
   }
   tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.view)));
-  const initial = (location.hash.replace('#','') === 'compare') ? 'compare' : 'dashboard';
+  const h = location.hash.replace('#','');
+  const initial = (h === 'compare' || h === 'matrix') ? h : 'dashboard';
   show(initial);
 })();
 
@@ -870,6 +938,169 @@ function initSparks(nodes){
       </tr>
     `;
   }).join('');
+})();
+
+/* ============= Dot Matrix LED renderer ============= */
+(function(){
+  const FONT = {
+    '0': ["01110","10001","10011","10101","11001","10001","01110"],
+    '1': ["00100","01100","00100","00100","00100","00100","01110"],
+    '2': ["01110","10001","00001","00010","00100","01000","11111"],
+    '3': ["11110","00001","00001","01110","00001","00001","11110"],
+    '4': ["00010","00110","01010","10010","11111","00010","00010"],
+    '5': ["11111","10000","11110","00001","00001","10001","01110"],
+    '6': ["00110","01000","10000","11110","10001","10001","01110"],
+    '7': ["11111","00001","00010","00100","01000","01000","01000"],
+    '8': ["01110","10001","10001","01110","10001","10001","01110"],
+    '9': ["01110","10001","10001","01111","00001","00010","01100"],
+    ':': ["00000","00100","00100","00000","00100","00100","00000"],
+    '.': ["00000","00000","00000","00000","00000","00100","00100"],
+    '%': ["11001","11010","00100","01000","10011","00011","00000"],
+    '/': ["00001","00010","00100","00100","01000","10000","10000"],
+    '-': ["00000","00000","00000","11111","00000","00000","00000"],
+    ' ': ["00000","00000","00000","00000","00000","00000","00000"],
+    'A': ["01110","10001","10001","11111","10001","10001","10001"],
+    'B': ["11110","10001","10001","11110","10001","10001","11110"],
+    'C': ["01110","10001","10000","10000","10000","10001","01110"],
+    'D': ["11100","10010","10001","10001","10001","10010","11100"],
+    'E': ["11111","10000","10000","11110","10000","10000","11111"],
+    'F': ["11111","10000","10000","11110","10000","10000","10000"],
+    'G': ["01110","10001","10000","10111","10001","10001","01110"],
+    'H': ["10001","10001","10001","11111","10001","10001","10001"],
+    'I': ["01110","00100","00100","00100","00100","00100","01110"],
+    'L': ["10000","10000","10000","10000","10000","10000","11111"],
+    'M': ["10001","11011","10101","10001","10001","10001","10001"],
+    'N': ["10001","11001","10101","10011","10001","10001","10001"],
+    'O': ["01110","10001","10001","10001","10001","10001","01110"],
+    'P': ["11110","10001","10001","11110","10000","10000","10000"],
+    'R': ["11110","10001","10001","11110","10100","10010","10001"],
+    'S': ["01111","10000","10000","01110","00001","00001","11110"],
+    'T': ["11111","00100","00100","00100","00100","00100","00100"],
+    'U': ["10001","10001","10001","10001","10001","10001","01110"],
+    'Y': ["10001","10001","01010","00100","00100","00100","00100"],
+  };
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function fmtTime(s){
+    const h = String(Math.floor(s/3600)).padStart(2,'0');
+    const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+    const ss= String(s%60).padStart(2,'0');
+    return `${h}:${m}:${ss}`;
+  }
+  function drawText(ctx, text, opts){
+    const { x, y, dot, gap, color, dim } = opts;
+    const cell = dot + gap;
+    let cx = x;
+    for (const raw of text){
+      const ch = FONT[raw] ? raw : (FONT[raw.toUpperCase()] ? raw.toUpperCase() : ' ');
+      const glyph = FONT[ch];
+      for (let r = 0; r < 7; r++){
+        for (let c = 0; c < 5; c++){
+          const on = glyph[r][c] === '1';
+          ctx.fillStyle = on ? color : dim;
+          ctx.beginPath();
+          ctx.arc(cx + c*cell + dot/2, y + r*cell + dot/2, dot/2, 0, Math.PI*2);
+          ctx.fill();
+          if (on){
+            ctx.fillStyle = color + '33';
+            ctx.beginPath();
+            ctx.arc(cx + c*cell + dot/2, y + r*cell + dot/2, dot, 0, Math.PI*2);
+            ctx.fill();
+          }
+        }
+      }
+      cx += 6 * cell;
+    }
+  }
+  function fitDot(text, canvas, padX, maxDot){
+    const cols = text.length * 6 - 1;
+    const cell = Math.floor((canvas.width - padX*2) / cols);
+    return Math.max(2, Math.min(maxDot, cell - 1));
+  }
+
+  const state = {
+    speed: 15.97, stroke: 21.0, efficiency: 76.75, production: 6419.5,
+    runSec: 27*60 + 53, stopCount: 88, status: 'RUNNING'
+  };
+  setInterval(() => {
+    state.speed     = clamp(state.speed     + (Math.random()-.5)*0.08, 14.5, 17.0);
+    state.stroke    = clamp(state.stroke    + (Math.random()-.5)*0.10, 19.5, 22.5);
+    state.efficiency= clamp(state.efficiency+ (Math.random()-.5)*0.20, 70, 85);
+    state.production+= Math.random()*0.5;
+    state.runSec    += 1;
+  }, 1000);
+
+  let mainMode = 'speed';
+  function mainText(){
+    switch(mainMode){
+      case 'speed':      return { label: 'SPEED', val: state.speed.toFixed(2)+' M/MIN', color:'#22ff66' };
+      case 'stroke':     return { label: 'STROKE', val: state.stroke.toFixed(2)+' SPM', color:'#22ff66' };
+      case 'efficiency': return { label: 'EFFY',  val: state.efficiency.toFixed(1)+'%', color:'#ffb020' };
+      case 'production': return { label: 'PROD',  val: state.production.toFixed(1)+' U', color:'#22ff66' };
+      case 'status':     return { label: 'STATUS', val: state.status, color:'#22ff66' };
+    }
+  }
+  document.querySelectorAll('[data-led-mode]').forEach(b => {
+    b.addEventListener('click', () => {
+      mainMode = b.dataset.ledMode;
+      document.querySelectorAll('[data-led-mode]').forEach(x => x.classList.remove('alert'));
+      b.classList.add('alert');
+    });
+  });
+
+  function renderMain(canvas){
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    const { label, val, color } = mainText();
+    const dim = '#0a1a0a';
+    drawText(ctx, label, { x: 24, y: 18, dot: 5, gap: 2, color: '#557a55', dim });
+    const dot = Math.min(fitDot(val, canvas, 24, 14), 14);
+    const cell = dot + 2;
+    const totalW = val.length * 6 * cell - cell;
+    const totalH = 7 * cell;
+    const x = Math.floor((canvas.width  - totalW)/2);
+    const y = Math.floor((canvas.height - totalH)/2) + 18;
+    drawText(ctx, val, { x, y, dot, gap: 2, color, dim });
+  }
+
+  function renderMini(canvas){
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    const kind = canvas.dataset.ledKind;
+    let text, color;
+    if (kind === 'time'){ text = fmtTime(state.runSec); color = '#22ff66'; }
+    else if (kind === 'count'){ text = String(state.stopCount).padStart(4,'0'); color = '#ff3030'; }
+    else { text = state.efficiency.toFixed(1)+'%'; color = '#ffb020'; }
+    const dot = Math.min(fitDot(text, canvas, 16, 11), 11);
+    const cell = dot + 2;
+    const totalW = text.length * 6 * cell - cell;
+    const totalH = 7 * cell;
+    const x = Math.floor((canvas.width  - totalW)/2);
+    const y = Math.floor((canvas.height - totalH)/2);
+    drawText(ctx, text, { x, y, dot, gap: 2, color, dim:'#0a0a0a' });
+  }
+
+  const main = document.getElementById('led-main');
+  const minis = document.querySelectorAll('.led-mini');
+  const fpsEl = document.getElementById('led-fps');
+  let last = performance.now(), frames = 0, fpsAcc = 0;
+  function loop(now){
+    const matrixView = document.getElementById('view-matrix');
+    if (matrixView && matrixView.classList.contains('active')){
+      renderMain(main);
+      minis.forEach(renderMini);
+      frames++;
+      fpsAcc += (now - last);
+      if (fpsAcc >= 500){
+        fpsEl.textContent = Math.round(frames * 1000 / fpsAcc) + ' fps';
+        frames = 0; fpsAcc = 0;
+      }
+    }
+    last = now;
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
 })();
 </script>
 </body>
